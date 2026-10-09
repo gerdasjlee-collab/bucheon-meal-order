@@ -31,7 +31,7 @@ st.caption(f"{CENTER} · 센터 표준 레시피 기준 · 식단과 인원만 �
 
 # ── 로그인 ──
 if ACCESS_CODES and not st.session_state.get("user"):
-    st.info("🔒 부천시 어린이집·지역아동센터·사회복지시설 전용입니다. 센터에서 안내받은 **접속 코드**와 담당자 정보를 입력하세요.")
+    st.info("🔒 부천시 어린이집·지역아동센터·사회복지시설 전용입니다. 센터에서 안내받은 **접속 코드**와 담당자 정보를 입력하세요. (센터 영양사는 관리자 코드만 입력)")
     with st.form("login"):
         code = st.text_input("접속 코드 *", type="password")
         c1, c2 = st.columns(2)
@@ -39,11 +39,15 @@ if ACCESS_CODES and not st.session_state.get("user"):
         name = c2.text_input("담당자 성명 *", placeholder="예: 홍길동")
         ok = st.form_submit_button("입장", use_container_width=True)
     if ok:
-        if code.strip() in ACCESS_CODES or code.strip() in ADMIN_CODES:
-            if not org.strip() or not name.strip():
+        is_admin = code.strip() in ADMIN_CODES
+        if code.strip() in ACCESS_CODES or is_admin:
+            if is_admin:
+                st.session_state.user = {"org": org.strip() or "급식관리지원센터", "name": name.strip() or "센터 영양사", "admin": True}
+                st.rerun()
+            elif not org.strip() or not name.strip():
                 st.error("기관명과 담당자 성명을 입력하세요.")
             else:
-                st.session_state.user = {"org": org.strip(), "name": name.strip(), "admin": code.strip() in ADMIN_CODES}
+                st.session_state.user = {"org": org.strip(), "name": name.strip(), "admin": False}
                 st.rerun()
         else:
             st.error("접속 코드가 올바르지 않습니다.")
