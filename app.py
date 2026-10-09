@@ -2,14 +2,12 @@
 """급식 식단·레시피·구매량 계산기 — 부천시어린이·사회복지급식관리지원센터
 식단(센터 표준 레시피 DB) → 대상별 인원 입력 → 식재료 구매량·발주서·레시피 카드 자동 산출."""
 import datetime as _dt
-import json
-import threading
-import urllib.request
 
 import pandas as pd
 import streamlit as st
 
 import calc as C
+import orderlog as L
 import pricing as P
 
 st.set_page_config(page_title="급식 식단·구매량 계산기", page_icon="🧮", layout="wide")
@@ -52,6 +50,22 @@ if ACCESS_CODES and not st.session_state.get("user"):
     st.stop()
 USER = st.session_state.get("user", {"org": "(테스트)", "name": "", "admin": True})
 
+# ── 관리자 모드 전환 (센터 영양사: 접속 코드 칸에 관리자 코드로 입장) ──
+with st.sidebar:
+    st.markdown(f"**👤 {USER['org']}** · {USER['name']}" + ("  \n🔑 관리자" if USER.get("admin") else ""))
+    if st.button("🚪 로그아웃", use_container_width=True):
+        for k in ("user", "extra", "price_map", "waste_map", "ex_draft"):
+            st.session_state.pop(k, None)
+        st.rerun()
+    if USER.get("admin"):
+        page = st.radio("화면", ["🧮 구매량 계산", "📊 관리자 통계"], label_visibility="collapsed")
+    else:
+        page = "🧮 구매량 계산"
+    st.divider()
+if page == "📊 관리자 통계":
+    L.admin_panel(LOG_WEBHOOK_URL)
+    st.stop()
+
 dishes, ings = C.load_db()
 MONTHS = sorted(dishes["월"].unique())
 
@@ -86,7 +100,9 @@ if group == "어린이집":
     if n35 or nstaff:
         portions.append((t35, n35 + round(nstaff * staff_coef), t35))
     if night and n_night:
-        # 야간연장 석식은 만3~5세 분량 기준
+        for t in ("어린이집 만1~2세 야간연장형", "어린이집 만3~5세 야간연장형"):
+            pass
+        # 야간연장 석식은 만3~5세 분량 기준(만1~2세 인원은 0.8 환산)
         portions.append(("어린이집 만3~5세 야간연장형", n_night, "어린이집 만3~5세 야간연장형"))
     for stg, n in n_bf.items():
         if n:
@@ -276,24 +292,12 @@ info = {"기관명": USER["org"], "담당자": USER["name"], "시설구분": gro
 xlsx = C.to_excel(info, purchase, detail, cards, menu_df)
 fname = f"발주서_{USER['org']}_{month}_{days[0]}-{days[-1]}일.xlsx"
 if st.download_button("⬇️ 발주서 + 식단표 + 레시피카드 (엑셀)", data=xlsx, file_name=fname, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True):
-    if LOG_WEBHOOK_URL:
-        row = dict(info, 총구매량kg=round(float(purchase["구매량(kg)"].sum()), 2), 예상금액=float(purchase["금액(원)"].sum()), 품목수=len(purchase))
-        def _post():
-            try:
-                req = urllib.request.Request(LOG_WEBHOOK_URL, data=json.dumps(row, ensure_ascii=False).encode(), headers={"Content-Type": "application/json"}, method="POST")
-                urllib.request.urlopen(req, timeout=10).read()
-            except Exception:  # noqa: BLE001
-                pass
-        threading.Thread(target=_post, daemon=True).start()
+    row = dict(info, 총구매량kg=round(float(purchase["구매량(kg)"].sum()), 2), 예상금액=round(total_cost), 품목수=len(purchase),
+               식단가=meal_price, 식단가예산=budget, **{"예산대비%": round(ratio)}, 구분="관리자" if USER.get("admin") else "기관")
+    L.log_order(LOG_WEBHOOK_URL, row)
 
 st.divider()
 st.caption(f"⚠️ 구매량은 센터 표준 레시피의 1인 분량과 통상 폐기율로 계산한 참고값입니다. 식재료 규격·업체 포장단위·실제 폐기율에 따라 조정하세요. 식단 변경은 센터 영양사 승인 후 적용합니다. · {CENTER}")
 with st.sidebar:
-    st.markdown(f"**👤 {USER['org']}** · {USER['name']}")
-    if st.button("🚪 로그아웃", use_container_width=True):
-        for k in ("user", "extra", "price_map", "waste_map", "ex_draft"):
-            st.session_state.pop(k, None)
-        st.rerun()
-    st.divider()
     st.markdown("**사용 순서**  \n1 식단 선택 → 2 인원 → 3 기간·끼니 → 5 폐기율·단가 확인 → 7 엑셀 내려받기")
     st.caption("레시피 DB: 2026년 9월 센터 표준 레시피 (18개 식단유형, 음식 3,957개)")
