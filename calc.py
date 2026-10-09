@@ -14,8 +14,8 @@ WEEKDAY = ["월", "화", "수", "목", "금", "토", "일"]
 
 @st.cache_data(show_spinner=False)
 def load_db():
-    d = pd.read_csv("db_dishes.csv.gz", dtype={"조리방법": str}).fillna({"알레르기": "", "조리방법": ""})
-    i = pd.read_csv("db_ingredients.csv.gz")
+    d = pd.read_csv("db_dishes.csv.xz", dtype={"조리방법": str}).fillna({"알레르기": "", "조리방법": ""})
+    i = pd.read_csv("db_ingredients.csv.xz")
     d["일"] = d["일"].astype(int)
     return d, i
 
